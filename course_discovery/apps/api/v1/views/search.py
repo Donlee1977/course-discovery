@@ -22,6 +22,16 @@ from course_discovery.apps.course_metadata.choices import ProgramStatus
 from course_discovery.apps.course_metadata.models import Course, CourseRun, Person, Program
 
 
+def filter_visible(queryset):
+    """
+    Filters out runs that shouldn't show up in a search.
+
+    Arguments:
+        queryset: a SearchQuerySet object over course runs
+    """
+    return queryset.filter(published=True).exclude(hidden=True).filter(is_marketable=True)
+
+
 # pylint: disable=useless-super-delegation
 class BaseHaystackViewSet(mixins.DetailMixin, FacetMixin, HaystackViewSet):
     document_uid_field = 'key'
@@ -88,7 +98,7 @@ class BaseHaystackViewSet(mixins.DetailMixin, FacetMixin, HaystackViewSet):
 
         if self.ensure_published:
             # Ensure we only return published, non-hidden items
-            queryset = queryset.filter(published=True).exclude(hidden=True)
+            queryset = filter_visible(queryset)
 
         for facet in self.request.query_params.getlist('selected_query_facets'):
             query = field_queries.get(facet)
@@ -186,7 +196,7 @@ class LimitedAggregateSearchView(FacetMixin, HaystackViewSet):
         queryset = super().filter_facet_queryset(queryset)
 
         # Ensure we only return published, non-hidden items
-        queryset = queryset.filter(published=True).exclude(hidden=True)
+        queryset = filter_visible(queryset)
 
         return queryset
 
@@ -279,7 +289,7 @@ class TypeaheadSearchView(APIView):
             SQ(course_key=clean_query) |
             SQ(authoring_organizations_autocomplete=clean_query)
         )
-        course_runs = course_runs.filter(published=True).exclude(hidden=True).filter(partner=partner.short_code)
+        course_runs = filter_visible(course_runs).filter(partner=partner.short_code)
 
         # Get first three results after deduplicating by course key.
         seen_course_keys, course_run_list = set(), []

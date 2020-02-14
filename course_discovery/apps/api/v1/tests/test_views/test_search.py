@@ -13,7 +13,7 @@ from course_discovery.apps.api.v1.views.search import BrowsableAPIRendererWithou
 from course_discovery.apps.core.tests.factories import USER_PASSWORD, PartnerFactory, UserFactory
 from course_discovery.apps.core.tests.mixins import ElasticsearchTestMixin
 from course_discovery.apps.course_metadata.choices import CourseRunStatus, ProgramStatus
-from course_discovery.apps.course_metadata.models import CourseRun
+from course_discovery.apps.course_metadata.models import CourseRun, CourseRunType
 from course_discovery.apps.course_metadata.tests.factories import (
     CourseFactory, CourseRunFactory, OrganizationFactory, PersonFactory, PositionFactory, ProgramFactory
 )
@@ -290,6 +290,19 @@ class AggregateSearchViewSetTests(mixins.SerializationMixin, mixins.LoginMixin, 
         data = response.json()
         assert data['objects']['results'] == [self.serialize_course_run_search(visible_run)]
 
+    def test_non_marketable_runs_excluded(self):
+        """Search results should not include non-marketable runs."""
+        marketable_run = CourseRunFactory(course__partner=self.partner,
+                                          type=CourseRunType.objects.get(slug=CourseRunType.VERIFIED_AUDIT))
+        non_marketable_run = CourseRunFactory(course__partner=self.partner,
+                                              type=CourseRunType.objects.get(slug=CourseRunType.EMPTY))
+
+        self.assertEqual(CourseRun.objects.get(type__is_marketable=False), non_marketable_run)
+
+        response = self.get_response()
+        data = response.json()
+        self.assertListEqual(data['objects']['results'], [self.serialize_course_run_search(marketable_run)])
+
     def test_results_filtered_by_default_partner(self):
         """ Verify the search results only include items related to the default partner if no partner is
         specified on the request. If a partner is included, the data should be filtered to the requested partner. """
@@ -405,6 +418,19 @@ class LimitedAggregateSearchViewSetTests(
             response = self.client.get(self.path)
         data = response.json()
         assert data['objects']['results'] == [self.serialize_course_run_search(visible_run)]
+
+    def test_non_marketable_runs_excluded(self):
+        """Search results should not include non-marketable runs."""
+        marketable_run = CourseRunFactory(course__partner=self.partner,
+                                          type=CourseRunType.objects.get(slug=CourseRunType.VERIFIED_AUDIT))
+        non_marketable_run = CourseRunFactory(course__partner=self.partner,
+                                              type=CourseRunType.objects.get(slug=CourseRunType.EMPTY))
+
+        self.assertEqual(CourseRun.objects.get(type__is_marketable=False), non_marketable_run)
+
+        response = self.client.get(self.path)
+        data = response.json()
+        self.assertListEqual(data['objects']['results'], [self.serialize_course_run_search(marketable_run)])
 
     def test_results_include_aggregation_key(self):
         """ Verify the search results only include the aggregation_key for each document. """
@@ -584,6 +610,22 @@ class TypeaheadSearchViewTests(mixins.TypeaheadSerializationMixin, mixins.LoginM
         expected_response_data = {
             'course_runs': [self.serialize_course_run_search(course_run)],
             'programs': [self.serialize_program_search(program)]
+        }
+        self.assertDictEqual(response_data, expected_response_data)
+
+    def test_non_marketable_runs_excluded(self):
+        """Search results should not include non-marketable runs."""
+        marketable_run = CourseRunFactory(title='supply', course__partner=self.partner,
+                                          type=CourseRunType.objects.get(slug=CourseRunType.VERIFIED_AUDIT))
+        CourseRunFactory(title='supply', course__partner=self.partner,
+                         type=CourseRunType.objects.get(slug=CourseRunType.EMPTY))
+
+        response = self.get_response({'q': 'suppl'})
+        self.assertEqual(response.status_code, 200)
+        response_data = response.json()
+        expected_response_data = {
+            'course_runs': [self.serialize_course_run_search(marketable_run)],
+            'programs': [],
         }
         self.assertDictEqual(response_data, expected_response_data)
 
